@@ -8,7 +8,7 @@ PLATFORMS = \
 
 all:
 	for i in $(PLATFORMS); do \
-		$(MAKE) $$i; \
+		$(MAKE) -f Makefile.release $$i; \
 	done
 
 $(PLATFORMS): TARGET_OS=$$(echo $@ | cut -f1 -d-)
