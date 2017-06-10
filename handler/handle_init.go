@@ -49,7 +49,7 @@ func (h *SerulianLangServerHandler) handlePreInit(ctx context.Context, conn *jso
 				}
 			}
 
-			h.documentTracker.initializeWorkspace(workspaceRoot)
+			h.documentTracker.initializeWorkspace(ctx, conn, workspaceRoot)
 
 			// Set the state as initializing.
 			h.currentState = stateInitializing

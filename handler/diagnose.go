@@ -16,9 +16,10 @@ import (
 )
 
 type diagnoseParams struct {
-	dt      *documentTracker
-	path    string
-	version int
+	dt                  *documentTracker
+	path                string
+	version             int
+	isWorkspaceDiagnose bool
 
 	ctx  context.Context
 	conn *jsonrpc2.Conn
@@ -33,21 +34,31 @@ func diagnoseDocument(data interface{}) {
 	conn := params.conn
 	path := params.path
 	version := params.version
+	isWorkspaceDiagnose := params.isWorkspaceDiagnose
+	workspaceGroker := dt.workspaceGrok
 
-	log.Printf("Starting diagnoseDocument for %s at version %v", path, version)
+	log.Printf("Starting diagnoseDocument for %s at version %v (isWorkspace=%v) \n", path, version, isWorkspaceDiagnose)
 
-	// Ensure we are still at the current version.
-	current, valid := dt.getDocumentAtVersion(path, version)
-	if !valid {
-		log.Printf("Canceled (#1) diagnoseDocument for %s at version %v", path, version)
-		return
-	}
+	// If this is a diagnose for a non-workspace document, then make sure we are still at the correct version.
+	groker := workspaceGroker
+	pathsToReport := []string{path}
 
-	// Retrieve the handle.
-	groker := current.groker
-	if groker == nil {
-		log.Printf("No groker for diagnoseDocument for %s at version %v", path, version)
-		return
+	if isWorkspaceDiagnose {
+		pathsToReport = dt.documents.Keys()
+	} else {
+		// Ensure we are still at the current version.
+		current, valid := dt.getDocumentAtVersion(path, version)
+		if !valid {
+			log.Printf("Canceled (#1) diagnoseDocument for %s at version %v", path, version)
+			return
+		}
+
+		// Retrieve the handle.
+		groker = current.groker
+		if groker == nil {
+			log.Printf("No groker for diagnoseDocument for %s at version %v", path, version)
+			return
+		}
 	}
 
 	handle, err := groker.GetHandle()
@@ -59,60 +70,69 @@ func diagnoseDocument(data interface{}) {
 	log.Printf("Got handle with status %v for diagnoseDocument for %s at version %v", handle.IsCompilable(), path, version)
 
 	// Ensure we are still at the current version.
-	current, valid = dt.getDocumentAtVersion(path, version)
-	if !valid {
-		log.Printf("Canceled (#2) diagnoseDocument for %s at version %v", path, version)
-		return
+	if !isWorkspaceDiagnose {
+		_, valid := dt.getDocumentAtVersion(path, version)
+		if !valid {
+			log.Printf("Canceled (#2) diagnoseDocument for %s at version %v", path, version)
+			return
+		}
 	}
 
 	// Collect any issues found, by document.
-	var issues = []protocol.Diagnostic{}
-	addIssue := func(sourceRange compilercommon.SourceRange, message string, severity protocol.DiagnosticSeverity) {
-		documentRange, err := dt.convertRange(sourceRange)
-		if err != nil {
-			return
+	for _, currentPath := range pathsToReport {
+		// Skip any paths no longer referenced by the document. They'll be updated on next edit.
+		if !handle.ContainsSource(compilercommon.InputSource(currentPath)) {
+			continue
 		}
 
-		issues = append(issues, protocol.Diagnostic{
-			Severity: severity,
-			Message:  message,
-			Range:    documentRange,
+		var issues = []protocol.Diagnostic{}
+		addIssue := func(sourceRange compilercommon.SourceRange, message string, severity protocol.DiagnosticSeverity) {
+			documentRange, err := dt.convertRange(sourceRange)
+			if err != nil {
+				return
+			}
+
+			issues = append(issues, protocol.Diagnostic{
+				Severity: severity,
+				Message:  message,
+				Range:    documentRange,
+			})
+		}
+
+		for _, sourceError := range handle.Errors() {
+			if string(sourceError.SourceRange().Source()) == currentPath {
+				addIssue(sourceError.SourceRange(), sourceError.Error(), protocol.DiagnosticError)
+			}
+		}
+
+		for _, sourceWarning := range handle.Warnings() {
+			if string(sourceWarning.SourceRange().Source()) == currentPath {
+				addIssue(sourceWarning.SourceRange(), sourceWarning.Warning(), protocol.DiagnosticWarning)
+			}
+		}
+
+		uri, okay := dt.sourceToURI(compilercommon.InputSource(currentPath))
+		if !okay {
+			log.Printf("Could not convert path `%s` to URI in diagnoseDocument at version %v", currentPath, version)
+			continue
+		}
+
+		if !isWorkspaceDiagnose {
+			// Ensure we are still at the current version.
+			_, valid := dt.getDocumentAtVersion(currentPath, version)
+			if !valid {
+				continue
+			}
+		}
+
+		err = conn.Notify(ctx, protocol.PublicDiagonsticsNotification, protocol.PublishDiagnosticsParams{
+			URI:         uri,
+			Diagnostics: issues,
 		})
-	}
 
-	for _, sourceError := range handle.Errors() {
-		if string(sourceError.SourceRange().Source()) == path {
-			addIssue(sourceError.SourceRange(), sourceError.Error(), protocol.DiagnosticError)
+		if err != nil {
+			log.Printf("Notify failed for diagnoseDocument for %s at version %v: %v", currentPath, version, err)
+			continue
 		}
-	}
-
-	for _, sourceWarning := range handle.Warnings() {
-		if string(sourceWarning.SourceRange().Source()) == path {
-			addIssue(sourceWarning.SourceRange(), sourceWarning.Warning(), protocol.DiagnosticWarning)
-		}
-	}
-
-	uri, okay := dt.sourceToURI(compilercommon.InputSource(path))
-	if !okay {
-		log.Printf("Could not convert path `%s` to URI in diagnoseDocument at version %v", path, version)
-		return
-	}
-
-	// Report the set of diagnostics for the current document; other documents will be handled
-	// by other calls to this method.
-	// Ensure we are still at the current version.
-	current, valid = dt.getDocumentAtVersion(path, version)
-	if !valid {
-		return
-	}
-
-	err = conn.Notify(ctx, protocol.PublicDiagonsticsNotification, protocol.PublishDiagnosticsParams{
-		URI:         uri,
-		Diagnostics: issues,
-	})
-
-	if err != nil {
-		log.Printf("Notify failed for diagnoseDocument for %s at version %v: %v", path, version, err)
-		return
 	}
 }

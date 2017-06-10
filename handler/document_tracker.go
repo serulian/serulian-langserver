@@ -90,9 +90,10 @@ func newDocumentTracker(vcsDevelopmentDirectories []string) *documentTracker {
 }
 
 // initializeWorkspace initializes the document tracker over the given workspace root.
-func (dt *documentTracker) initializeWorkspace(workspaceRootPath string) {
+func (dt *documentTracker) initializeWorkspace(ctx context.Context, conn *jsonrpc2.Conn, workspaceRootPath string) {
 	dt.workspaceRootPath = workspaceRootPath
 	dt.workspaceGrok = grok.NewGrokerWithPathLoader(workspaceRootPath, dt.vcsDevelopmentDirectories, getPackageLibraries(workspaceRootPath), dt)
+	dt.debouncedDiagnose(diagnoseParams{dt, workspaceRootPath, -1, true, ctx, conn})
 }
 
 // tracksLanguage returns true if the given language is tracked by the document tracker.
@@ -132,16 +133,44 @@ func (dt *documentTracker) openDocument(ctx context.Context, conn *jsonrpc2.Conn
 		return
 	}
 
-	groker := grok.NewGrokerWithPathLoader(path, dt.vcsDevelopmentDirectories, getPackageLibraries(path), dt)
+	// Check if the document is being tracked by the workspace grok. If so, this is part of the current project and we
+	// just use the overall Grok for performance and diagnosis. Otherwise, we create a new Grok rooted at the document
+	// to allow arbitrary files to be opened.
+	workspaceGrok := dt.workspaceGrok
+	isWorkspaceDocument := dt.isWorkspaceDocument(path)
+
+	documentGroker := workspaceGrok
+	if !isWorkspaceDocument {
+		documentGroker = grok.NewGrokerWithPathLoader(path, dt.vcsDevelopmentDirectories, getPackageLibraries(path), dt)
+	}
+
 	dt.documents.Set(path, document{
 		path:                 path,
 		contents:             contents,
 		version:              version,
-		groker:               groker,
+		groker:               documentGroker,
 		codeContextOrActions: cmap.New(),
 	})
 
-	dt.debouncedDiagnose(diagnoseParams{dt, path, version, ctx, conn})
+	// Only kick off a diagnose if this isn't a workspace document, as otherwise we've already done so.
+	if !isWorkspaceDocument {
+		dt.debouncedDiagnose(diagnoseParams{dt, path, version, false, ctx, conn})
+	}
+}
+
+// isWorkspaceDocument returns whether the given path is being built by the workspace Groker.
+func (dt *documentTracker) isWorkspaceDocument(path string) bool {
+	workspaceGrok := dt.workspaceGrok
+	if workspaceGrok == nil {
+		return false
+	}
+
+	handle, err := workspaceGrok.GetHandleWithOption(grok.HandleAllowStale)
+	if err != nil {
+		return false
+	}
+
+	return handle.ContainsSource(compilercommon.InputSource(path))
 }
 
 // updateDocument updates the contents of the document with the given URI. If the document is not being
@@ -152,7 +181,10 @@ func (dt *documentTracker) updateDocument(ctx context.Context, conn *jsonrpc2.Co
 		return
 	}
 
-	if !dt.documents.Has(path) {
+	// Check if the document is being tracked by the workspace grok. If so, then we just kick off the diagnosis of the workspace
+	// again.
+	isWorkspaceDocument := dt.isWorkspaceDocument(path)
+	if !isWorkspaceDocument && !dt.documents.Has(path) {
 		return
 	}
 
@@ -175,7 +207,11 @@ func (dt *documentTracker) updateDocument(ctx context.Context, conn *jsonrpc2.Co
 		}
 	})
 
-	dt.debouncedDiagnose(diagnoseParams{dt, path, version, ctx, conn})
+	if isWorkspaceDocument {
+		dt.debouncedDiagnose(diagnoseParams{dt, dt.workspaceRootPath, -1, true, ctx, conn})
+	} else {
+		dt.debouncedDiagnose(diagnoseParams{dt, path, version, false, ctx, conn})
+	}
 }
 
 // closeDocument stops tracking the document with the given URI.
@@ -217,7 +253,12 @@ func (dt *documentTracker) getGrokHandleAndDocument(uri string, freshnessOption 
 		return grok.Handle{}, document{}, fmt.Errorf("Document is not being tracked: %s", uri)
 	}
 
+	// Check if the document is a workspace document. If so, change to using the workspace Groker.
 	groker := current.(document).groker
+	if dt.isWorkspaceDocument(path) {
+		groker = dt.workspaceGrok
+	}
+
 	if groker == nil {
 		return grok.Handle{}, current.(document), fmt.Errorf("Document is not being tracked: %s", uri)
 	}
