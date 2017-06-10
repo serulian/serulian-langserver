@@ -20,12 +20,19 @@ import (
 
 	"github.com/serulian/serulian-langserver/protocol"
 
+	"path"
+
 	"github.com/sourcegraph/jsonrpc2"
 	cmap "github.com/streamrail/concurrent-map"
 )
 
 // DiagnoseDelay is the delay waited before a document is re-parsed.
 const DiagnoseDelay = 500 * time.Millisecond
+
+// getPackageLibraries returns the libraries to load, if any, when creating a Groker.
+func getPackageLibraries(path string) []packageloader.Library {
+	return []packageloader.Library{builder.CORE_LIBRARY}
+}
 
 // document represents a single document found in the tracker.
 type document struct {
@@ -48,27 +55,54 @@ type document struct {
 // documentTracker keeps track of all documents (source files) which are open
 // in the client.
 type documentTracker struct {
-	documents         cmap.ConcurrentMap
-	localPathLoader   packageloader.LocalFilePathLoader
+	// documents is the map of documents being tracked, keyed by path.
+	documents cmap.ConcurrentMap
+
+	// localPathLoader is an instance of a LocalFilePathLoader to be used as a basis
+	// for the document tracker's path loading for files that are *not* being tracked.
+	localPathLoader packageloader.LocalFilePathLoader
+
+	// debouncedDiagnose is a debounced-wrapped call over the diagnoseDocument function.
 	debouncedDiagnose func(data interface{})
+
+	// vcsDevelopmentDirectories are the specified VCS development directories to be passed
+	// to Grok, if any.
+	vcsDevelopmentDirectories []string
+
+	// workspaceRootPath is the root path of the workspace.
+	workspaceRootPath string
+
+	// workspaceGrok is (if defined) the workspace-wide Grok.
+	workspaceGrok *grok.Groker
 }
 
-func newDocumentTracker() documentTracker {
-	return documentTracker{
+func newDocumentTracker(vcsDevelopmentDirectories []string) *documentTracker {
+	return &documentTracker{
 		documents:         cmap.New(),
 		localPathLoader:   packageloader.LocalFilePathLoader{},
 		debouncedDiagnose: debounce(diagnoseDocument, DiagnoseDelay),
+
+		vcsDevelopmentDirectories: vcsDevelopmentDirectories,
+
+		workspaceRootPath: "",
+		workspaceGrok:     nil,
 	}
 }
 
+// initializeWorkspace initializes the document tracker over the given workspace root.
+func (dt *documentTracker) initializeWorkspace(workspaceRootPath string) {
+	dt.workspaceRootPath = workspaceRootPath
+	dt.workspaceGrok = grok.NewGrokerWithPathLoader(workspaceRootPath, dt.vcsDevelopmentDirectories, getPackageLibraries(workspaceRootPath), dt)
+}
+
 // tracksLanguage returns true if the given language is tracked by the document tracker.
-func (dt documentTracker) tracksLanguage(languageID string) bool {
+func (dt *documentTracker) tracksLanguage(languageID string) bool {
 	return languageID == "serulian" || languageID == "webidl"
 }
 
 // uriToPath converts the given URI into a local file system path. If the URI is not a `file:///`
 // URI, returns an error.
-func (dt documentTracker) uriToPath(uri string) (string, error) {
+func (dt *documentTracker) uriToPath(uri string) (string, error) {
 	url, err := url.Parse(uri)
 	if err != nil {
 		return "", err
@@ -82,7 +116,7 @@ func (dt documentTracker) uriToPath(uri string) (string, error) {
 }
 
 // isTracking returns true if and only if the document with the specified URI is already being tracked.
-func (dt documentTracker) isTracking(uri string) bool {
+func (dt *documentTracker) isTracking(uri string) bool {
 	path, err := dt.uriToPath(uri)
 	if err != nil {
 		return false
@@ -92,13 +126,13 @@ func (dt documentTracker) isTracking(uri string) bool {
 }
 
 // openDocument starts tracking of a document with the given URI, contents and initial version number.
-func (dt documentTracker) openDocument(ctx context.Context, conn *jsonrpc2.Conn, uri string, contents string, version int) {
+func (dt *documentTracker) openDocument(ctx context.Context, conn *jsonrpc2.Conn, uri string, contents string, version int) {
 	path, err := dt.uriToPath(uri)
 	if err != nil {
 		return
 	}
 
-	groker := grok.NewGrokerWithPathLoader(path, []string{}, []packageloader.Library{builder.CORE_LIBRARY}, dt)
+	groker := grok.NewGrokerWithPathLoader(path, dt.vcsDevelopmentDirectories, getPackageLibraries(path), dt)
 	dt.documents.Set(path, document{
 		path:                 path,
 		contents:             contents,
@@ -107,12 +141,12 @@ func (dt documentTracker) openDocument(ctx context.Context, conn *jsonrpc2.Conn,
 		codeContextOrActions: cmap.New(),
 	})
 
-	dt.debouncedDiagnose(diagnoseParams{dt, ctx, conn, path, version})
+	dt.debouncedDiagnose(diagnoseParams{dt, path, version, ctx, conn})
 }
 
 // updateDocument updates the contents of the document with the given URI. If the document is not being
 // tracked, does nothing.
-func (dt documentTracker) updateDocument(ctx context.Context, conn *jsonrpc2.Conn, uri string, contents string, version int) {
+func (dt *documentTracker) updateDocument(ctx context.Context, conn *jsonrpc2.Conn, uri string, contents string, version int) {
 	path, err := dt.uriToPath(uri)
 	if err != nil {
 		return
@@ -141,11 +175,11 @@ func (dt documentTracker) updateDocument(ctx context.Context, conn *jsonrpc2.Con
 		}
 	})
 
-	dt.debouncedDiagnose(diagnoseParams{dt, ctx, conn, path, version})
+	dt.debouncedDiagnose(diagnoseParams{dt, path, version, ctx, conn})
 }
 
 // closeDocument stops tracking the document with the given URI.
-func (dt documentTracker) closeDocument(uri string) {
+func (dt *documentTracker) closeDocument(uri string) {
 	path, err := dt.uriToPath(uri)
 	if err != nil {
 		return
@@ -155,7 +189,7 @@ func (dt documentTracker) closeDocument(uri string) {
 }
 
 // getDocumentAtVersion returns the document at the specified version, for the specified path, if any.
-func (dt documentTracker) getDocumentAtVersion(path string, version int) (document, bool) {
+func (dt *documentTracker) getDocumentAtVersion(path string, version int) (document, bool) {
 	currentValue, exists := dt.documents.Get(path)
 	if !exists {
 		return document{}, false
@@ -166,13 +200,13 @@ func (dt documentTracker) getDocumentAtVersion(path string, version int) (docume
 }
 
 // getGrokHandle returns the Grok handle using the given URI as the root source path.
-func (dt documentTracker) getGrokHandle(uri string, freshnessOption grok.HandleFreshnessOption) (grok.Handle, error) {
+func (dt *documentTracker) getGrokHandle(uri string, freshnessOption grok.HandleFreshnessOption) (grok.Handle, error) {
 	handle, _, err := dt.getGrokHandleAndDocument(uri, freshnessOption)
 	return handle, err
 }
 
 // getGrokHandleAndDocument returns the Grok handle using the given URI as the root source path.
-func (dt documentTracker) getGrokHandleAndDocument(uri string, freshnessOption grok.HandleFreshnessOption) (grok.Handle, document, error) {
+func (dt *documentTracker) getGrokHandleAndDocument(uri string, freshnessOption grok.HandleFreshnessOption) (grok.Handle, document, error) {
 	path, err := dt.uriToPath(uri)
 	if err != nil {
 		return grok.Handle{}, document{}, err
@@ -193,7 +227,7 @@ func (dt documentTracker) getGrokHandleAndDocument(uri string, freshnessOption g
 }
 
 // sourceToURI returns the given source as a URI.
-func (dt documentTracker) sourceToURI(source compilercommon.InputSource) (protocol.DocumentURI, bool) {
+func (dt *documentTracker) sourceToURI(source compilercommon.InputSource) (protocol.DocumentURI, bool) {
 	url := url.URL{
 		Scheme: "file",
 		Path:   string(source),
@@ -203,7 +237,7 @@ func (dt documentTracker) sourceToURI(source compilercommon.InputSource) (protoc
 }
 
 // convertRange returns the given source range as a Document Range.
-func (dt documentTracker) convertRange(sourceRange compilercommon.SourceRange) (protocol.Range, error) {
+func (dt *documentTracker) convertRange(sourceRange compilercommon.SourceRange) (protocol.Range, error) {
 	startLine, startCol, err := sourceRange.Start().LineAndColumn()
 	if err != nil {
 		return protocol.Range{}, err
@@ -221,7 +255,7 @@ func (dt documentTracker) convertRange(sourceRange compilercommon.SourceRange) (
 }
 
 // convertRanges converts the given SourceRanges's into Document Locations.
-func (dt documentTracker) convertRanges(sourceRanges []compilercommon.SourceRange) []protocol.Location {
+func (dt *documentTracker) convertRanges(sourceRanges []compilercommon.SourceRange) []protocol.Location {
 	locations := make([]protocol.Location, 0, len(sourceRanges))
 	for _, sourceRange := range sourceRanges {
 		uri, ok := dt.sourceToURI(sourceRange.Source())
@@ -243,7 +277,7 @@ func (dt documentTracker) convertRanges(sourceRanges []compilercommon.SourceRang
 }
 
 // getLineText returns the text found on the line of the given position before its column position.
-func (dt documentTracker) getLineText(uri string, lineNumber int, colPosition int) (string, error) {
+func (dt *documentTracker) getLineText(uri string, lineNumber int, colPosition int) (string, error) {
 	path, err := dt.uriToPath(uri)
 	if err != nil {
 		return "", err
@@ -268,7 +302,7 @@ func (dt documentTracker) getLineText(uri string, lineNumber int, colPosition in
 }
 
 // formatDocument formats the document found at the given URI, return a set of edits.
-func (dt documentTracker) formatDocument(uri string) []protocol.TextEdit {
+func (dt *documentTracker) formatDocument(uri string) []protocol.TextEdit {
 	path, err := dt.uriToPath(uri)
 	if err != nil {
 		return []protocol.TextEdit{}
@@ -309,7 +343,17 @@ func (dt documentTracker) formatDocument(uri string) []protocol.TextEdit {
 	return []protocol.TextEdit{changeAll}
 }
 
-func (dt documentTracker) LoadSourceFile(path string) ([]byte, error) {
+func (dt *documentTracker) VCSPackageDirectory(entrypoint packageloader.Entrypoint) string {
+	workspaceRootDirectory := dt.workspaceRootPath
+	if dt.IsSourceFile(workspaceRootDirectory) {
+		workspaceRootDirectory = path.Dir(workspaceRootDirectory)
+	}
+
+	workspacePackageDirectory := path.Join(workspaceRootDirectory, packageloader.SerulianPackageDirectory)
+	return workspacePackageDirectory
+}
+
+func (dt *documentTracker) LoadSourceFile(path string) ([]byte, error) {
 	currentValue, exists := dt.documents.Get(path)
 	if exists {
 		return []byte(currentValue.(document).contents), nil
@@ -318,7 +362,7 @@ func (dt documentTracker) LoadSourceFile(path string) ([]byte, error) {
 	return dt.localPathLoader.LoadSourceFile(path)
 }
 
-func (dt documentTracker) GetRevisionID(path string) (int64, error) {
+func (dt *documentTracker) GetRevisionID(path string) (int64, error) {
 	currentValue, exists := dt.documents.Get(path)
 	if exists {
 		return int64(currentValue.(document).version), nil
@@ -327,10 +371,10 @@ func (dt documentTracker) GetRevisionID(path string) (int64, error) {
 	return dt.localPathLoader.GetRevisionID(path)
 }
 
-func (dt documentTracker) IsSourceFile(path string) bool {
+func (dt *documentTracker) IsSourceFile(path string) bool {
 	return dt.localPathLoader.IsSourceFile(path)
 }
 
-func (dt documentTracker) LoadDirectory(path string) ([]packageloader.DirectoryEntry, error) {
+func (dt *documentTracker) LoadDirectory(path string) ([]packageloader.DirectoryEntry, error) {
 	return dt.localPathLoader.LoadDirectory(path)
 }

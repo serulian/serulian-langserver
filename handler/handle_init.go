@@ -9,9 +9,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/serulian/compiler/builder"
 	"github.com/serulian/compiler/grok"
-	"github.com/serulian/compiler/packageloader"
 
 	"github.com/serulian/serulian-langserver/protocol"
 
@@ -41,15 +39,20 @@ func (h *SerulianLangServerHandler) handlePreInit(ctx context.Context, conn *jso
 				}
 			}
 
-			// Save the root URI and set the state to initializing.
-			h.rootURI = initializeParams.RootURI
-			h.currentState = stateInitializing
-
-			// Initialize the global groker.
-			path, err := h.documentTracker.uriToPath(string(initializeParams.RootURI))
-			if err == nil {
-				h.groker = grok.NewGrokerWithPathLoader(path, []string{}, []packageloader.Library{builder.CORE_LIBRARY}, h.documentTracker)
+			// Initialize the document tracker.
+			workspaceRoot := h.entrypointSourceFile
+			if workspaceRoot == "" {
+				workspaceRoot, err = h.documentTracker.uriToPath(initializeParams.RootURI.String())
+				if err != nil {
+					log.Printf("Error when trying to convert workspace root URI to a path: %v\n", err)
+					return nil, err
+				}
 			}
+
+			h.documentTracker.initializeWorkspace(workspaceRoot)
+
+			// Set the state as initializing.
+			h.currentState = stateInitializing
 
 			// Respond back with our capabilities.
 			trueValue := true

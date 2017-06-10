@@ -509,13 +509,14 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 		}
 
 		log.Printf("Got workspace symbol request with query: %s", params.Query)
-		if h.groker == nil {
+		groker := h.documentTracker.workspaceGrok
+		if groker == nil {
 			log.Printf("No workspace Grok available\n")
 			return protocol.WorkspaceSymbolResponse([]protocol.SymbolInformation{}), nil
 		}
 
 		// Grab a Grok handle.
-		handle, err := h.groker.GetHandle()
+		handle, err := groker.GetHandleWithOption(grok.HandleAllowStale)
 		if err != nil {
 			log.Printf("Got error when trying to get grok handle for global workspace: %v", err)
 			return protocol.WorkspaceSymbolResponse([]protocol.SymbolInformation{}), nil
@@ -734,10 +735,15 @@ func (h *SerulianLangServerHandler) symbolInfoFromSymbol(symbol grok.Symbol) (pr
 		panic("Unknown kind of Grok symbol")
 	}
 
+	ranges := h.documentTracker.convertRanges(symbol.SourceRanges)
+	if len(ranges) == 0 {
+		return protocol.SymbolInformation{}, false
+	}
+
 	return protocol.SymbolInformation{
 		Name:          symbol.Name,
 		Kind:          symbolKind,
 		ContainerName: containerName,
-		Location:      h.documentTracker.convertRanges(symbol.SourceRanges)[0],
+		Location:      ranges[0],
 	}, true
 }

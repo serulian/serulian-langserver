@@ -16,11 +16,12 @@ import (
 )
 
 type diagnoseParams struct {
-	dt      documentTracker
-	ctx     context.Context
-	conn    *jsonrpc2.Conn
+	dt      *documentTracker
 	path    string
 	version int
+
+	ctx  context.Context
+	conn *jsonrpc2.Conn
 }
 
 // diagnoseDocument is a helper which is invoked as a goroutine to background index and report diagnostics for
