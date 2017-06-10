@@ -11,8 +11,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/serulian/compiler/grok"
-
 	"github.com/serulian/serulian-langserver/protocol"
 
 	"github.com/sourcegraph/jsonrpc2"
@@ -32,22 +30,20 @@ type SerulianLangServerHandler struct {
 	// currentState holds the current state of the language server.
 	currentState langServerState
 
-	// rootURI holds the URI of the root for the workspace.
-	rootURI protocol.DocumentURI
+	// entrypointSourceFile is, if specified, the entrypoint source file for the current workspace.
+	// If empty, the workspace's root will be used instead.
+	entrypointSourceFile string
 
 	// documentTracker defines a tracker for managing the state of all open documents (source files).
-	documentTracker documentTracker
-
-	// groker holds a reference to the Grok for this *workspace*, if any. The workspace Grok should
-	// only be used for global lookup.
-	groker *grok.Groker
+	documentTracker *documentTracker
 }
 
 // NewHandler creates a Serulian language server handler.
-func NewHandler() jsonrpc2.Handler {
+func NewHandler(entrypointSourceFile string, vcsDevelopmentDirectories []string) jsonrpc2.Handler {
 	return &SerulianLangServerHandler{
-		currentState:    statePreInitialized,
-		documentTracker: newDocumentTracker(),
+		currentState:         statePreInitialized,
+		entrypointSourceFile: entrypointSourceFile,
+		documentTracker:      newDocumentTracker(vcsDevelopmentDirectories),
 	}
 }
 

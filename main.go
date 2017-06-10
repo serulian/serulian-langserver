@@ -18,9 +18,11 @@ const (
 )
 
 var (
-	mode  string
-	debug bool
-	addr  string
+	mode                      string
+	debug                     bool
+	addr                      string
+	entrypointSourceFile      string
+	vcsDevelopmentDirectories []string
 )
 
 func main() {
@@ -35,6 +37,9 @@ func main() {
 
 	cmdRun.PersistentFlags().StringVar(&addr, "addr", ":4389", "The address at which the language server will be served")
 	cmdRun.PersistentFlags().StringVar(&mode, "mode", stdioMode, "The communication mode under which the language server will be served (tcp|stdio)")
+	cmdRun.PersistentFlags().StringVar(&entrypointSourceFile, "entrypointSourceFile", "", "The entrypoint source file for the project (optional)")
+	cmdRun.PersistentFlags().StringSliceVar(&vcsDevelopmentDirectories, "vcs-dev-dir", []string{},
+		"If specified, VCS packages without specification will be first checked against this path")
 
 	// Register the root command.
 	var rootCmd = &cobra.Command{
@@ -56,9 +61,10 @@ func run() error {
 		connOptions = append(connOptions, jsonrpc2.LogMessages(log.New(os.Stderr, "", 0)))
 	}
 
+	handler := handler.NewHandler(entrypointSourceFile, vcsDevelopmentDirectories)
 	if mode == stdioMode {
 		log.Printf("Serulian language server running under STDIO mode\n")
-		<-jsonrpc2.NewConn(context.Background(), jsonrpc2.NewBufferedStream(stdrwc{}, jsonrpc2.VSCodeObjectCodec{}), handler.NewHandler(), connOptions...).DisconnectNotify()
+		<-jsonrpc2.NewConn(context.Background(), jsonrpc2.NewBufferedStream(stdrwc{}, jsonrpc2.VSCodeObjectCodec{}), handler, connOptions...).DisconnectNotify()
 		return nil
 	}
 
@@ -77,7 +83,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		jsonrpc2.NewConn(context.Background(), jsonrpc2.NewBufferedStream(conn, jsonrpc2.VSCodeObjectCodec{}), handler.NewHandler(), connOptions...)
+		jsonrpc2.NewConn(context.Background(), jsonrpc2.NewBufferedStream(conn, jsonrpc2.VSCodeObjectCodec{}), handler, connOptions...)
 	}
 }
 
