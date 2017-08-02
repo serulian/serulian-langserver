@@ -412,8 +412,18 @@ func (dt *documentTracker) GetRevisionID(path string) (int64, error) {
 	return dt.localPathLoader.GetRevisionID(path)
 }
 
+func (dt *documentTracker) Exists(path string) (bool, error) {
+	_, exists := dt.documents.Get(path)
+	if exists {
+		return true, nil
+	}
+
+	return dt.localPathLoader.Exists(path)
+}
+
 func (dt *documentTracker) IsSourceFile(path string) bool {
-	return dt.localPathLoader.IsSourceFile(path)
+	_, exists := dt.documents.Get(path)
+	return exists || dt.localPathLoader.IsSourceFile(path)
 }
 
 func (dt *documentTracker) LoadDirectory(path string) ([]packageloader.DirectoryEntry, error) {
