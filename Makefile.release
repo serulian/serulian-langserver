@@ -13,9 +13,12 @@ all:
 
 $(PLATFORMS): TARGET_OS=$$(echo $@ | cut -f1 -d-)
 $(PLATFORMS): TARGET_ARCH=$$(echo $@ | cut -f2 -d-)
+$(PLATFORMS): TOOLKIT_VERSION=""
+$(PLATFORMS): TOOLKIT_SHA=$$(cd ../compiler && git rev-parse --short HEAD || echo "GitNotFound")
+$(PLATFORMS): LANG_SHA=$$(git rev-parse --short HEAD || echo "GitNotFound")
 $(PLATFORMS):
 	mkdir -p releases
-	GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) go build -o releases/serulian-langserver-$(TARGET_OS)-$(TARGET_ARCH) .
+	GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) go build -ldflags "-X github.com/serulian/serulian-langserver/version.GitSHA=$(LANG_SHA) -X github.com/serulian/compiler/version.GitSHA=$(TOOLKIT_SHA) -X github.com/serulian/compiler/version.Version=$(TOOLKIT_VERSION)" -o releases/serulian-langserver-$(TARGET_OS)-$(TARGET_ARCH) .
 
 clean:
 	$(RM) -rf releases
