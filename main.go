@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"os"
 
+	toolkitversion "github.com/serulian/compiler/version"
 	"github.com/serulian/serulian-langserver/handler"
+	"github.com/serulian/serulian-langserver/version"
 
 	"github.com/sourcegraph/jsonrpc2"
 	"github.com/spf13/cobra"
@@ -41,14 +44,29 @@ func main() {
 	cmdRun.PersistentFlags().StringSliceVar(&vcsDevelopmentDirectories, "vcs-dev-dir", []string{},
 		"If specified, VCS packages without specification will be first checked against this path")
 
+	var cmdVersion = &cobra.Command{
+		Use:   "version",
+		Short: "Displays the version of the Serulian language server",
+		Long:  `Displays the version of the Serulian language server`,
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("Serulian Language Server\n\n")
+
+			fmt.Printf("Toolkit Version: %s\n\n", toolkitversion.DescriptiveVersion())
+
+			fmt.Printf("Language Server SHA: %s\n", version.GitSHA)
+			fmt.Printf("Toolkit SHA: %s\n", toolkitversion.GitSHA)
+		},
+	}
+
 	// Register the root command.
 	var rootCmd = &cobra.Command{
 		Use:   "langserver",
 		Short: "Serulian Language Server",
-		Long:  "Serulian Language Server",
+		Long:  fmt.Sprintf("Serulian Language Server (Version %s, SHA %s)", toolkitversion.DescriptiveVersion(), version.GitSHA),
 	}
 
 	rootCmd.AddCommand(cmdRun)
+	rootCmd.AddCommand(cmdVersion)
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "If set to true, will print debug logs")
 	rootCmd.Execute()
 }
