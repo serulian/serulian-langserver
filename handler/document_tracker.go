@@ -291,7 +291,7 @@ func (dt *documentTracker) convertRange(sourceRange compilercommon.SourceRange) 
 
 	return protocol.Range{
 		Start: protocol.Position{startLine, startCol},
-		End:   protocol.Position{endLine, endCol},
+		End:   protocol.Position{endLine, endCol + 1},
 	}, nil
 }
 
@@ -378,7 +378,7 @@ func (dt *documentTracker) formatDocument(uri string) []protocol.TextEdit {
 		NewText: formatted,
 		Range: protocol.Range{
 			protocol.Position{0, 0},
-			protocol.Position{lastLine, lastLineLength},
+			protocol.Position{lastLine, lastLineLength + 1},
 		},
 	}
 	return []protocol.TextEdit{changeAll}

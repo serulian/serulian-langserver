@@ -36,7 +36,7 @@ type Range struct {
 	// Start is the starting position of the range, inclusive.
 	Start Position `json:"start"`
 
-	// End is the ending position of the range, inclusive.
+	// End is the ending position of the range, exclusive.
 	End Position `json:"end"`
 }
 
