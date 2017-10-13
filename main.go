@@ -7,6 +7,8 @@ import (
 	"net"
 	"os"
 
+	goprofile "github.com/pkg/profile"
+
 	toolkitversion "github.com/serulian/compiler/version"
 	"github.com/serulian/serulian-langserver/handler"
 	"github.com/serulian/serulian-langserver/version"
@@ -23,6 +25,7 @@ const (
 var (
 	mode                      string
 	debug                     bool
+	profile                   bool
 	addr                      string
 	entrypointSourceFile      string
 	vcsDevelopmentDirectories []string
@@ -34,6 +37,10 @@ func main() {
 		Short: "Runs the Serulian language server",
 		Long:  `Runs the Serulian language server`,
 		Run: func(cmd *cobra.Command, args []string) {
+			if profile {
+				defer goprofile.Start(goprofile.CPUProfile).Stop()
+			}
+
 			run()
 		},
 	}
@@ -68,6 +75,7 @@ func main() {
 	rootCmd.AddCommand(cmdRun)
 	rootCmd.AddCommand(cmdVersion)
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "If set to true, will print debug logs")
+	rootCmd.PersistentFlags().BoolVar(&profile, "profile", false, "If set to true, the language server will be profiled")
 	rootCmd.Execute()
 }
 
