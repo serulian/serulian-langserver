@@ -42,10 +42,12 @@ func (h *SerulianLangServerHandler) handlePreInit(ctx context.Context, conn *jso
 			// Initialize the document tracker.
 			workspaceRoot := h.entrypointSourceFile
 			if workspaceRoot == "" {
-				workspaceRoot, err = h.documentTracker.uriToPath(initializeParams.RootURI.String())
-				if err != nil {
-					log.Printf("Error when trying to convert workspace root URI to a path: %v\n", err)
-					return nil, err
+				if initializeParams.RootURI.String() != "" {
+					workspaceRoot, err = h.documentTracker.uriToPath(initializeParams.RootURI.String())
+					if err != nil {
+						log.Printf("Error when trying to convert workspace root URI to a path: %v\n", err)
+						return nil, err
+					}
 				}
 			}
 

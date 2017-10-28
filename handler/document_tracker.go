@@ -69,7 +69,8 @@ type documentTracker struct {
 	// to Grok, if any.
 	vcsDevelopmentDirectories []string
 
-	// workspaceRootPath is the root path of the workspace.
+	// workspaceRootPath is the root path of the workspace. May be empty if there is no
+	// workspace being used.
 	workspaceRootPath string
 
 	// workspaceGrok is (if defined) the workspace-wide Grok.
@@ -92,8 +93,10 @@ func newDocumentTracker(vcsDevelopmentDirectories []string) *documentTracker {
 // initializeWorkspace initializes the document tracker over the given workspace root.
 func (dt *documentTracker) initializeWorkspace(ctx context.Context, conn *jsonrpc2.Conn, workspaceRootPath string) {
 	dt.workspaceRootPath = workspaceRootPath
-	dt.workspaceGrok = grok.NewGrokerWithPathLoader(workspaceRootPath, dt.vcsDevelopmentDirectories, getPackageLibraries(workspaceRootPath), dt)
-	dt.debouncedDiagnose(diagnoseParams{dt, workspaceRootPath, -1, true, ctx, conn})
+	if workspaceRootPath != "" {
+		dt.workspaceGrok = grok.NewGrokerWithPathLoader(workspaceRootPath, dt.vcsDevelopmentDirectories, getPackageLibraries(workspaceRootPath), dt)
+		dt.debouncedDiagnose(diagnoseParams{dt, workspaceRootPath, -1, true, ctx, conn})
+	}
 }
 
 // tracksLanguage returns true if the given language is tracked by the document tracker.
@@ -140,7 +143,7 @@ func (dt *documentTracker) openDocument(ctx context.Context, conn *jsonrpc2.Conn
 	isWorkspaceDocument := dt.isWorkspaceDocument(path)
 
 	documentGroker := workspaceGrok
-	if !isWorkspaceDocument {
+	if !isWorkspaceDocument || workspaceGrok == nil {
 		documentGroker = grok.NewGrokerWithPathLoader(path, dt.vcsDevelopmentDirectories, getPackageLibraries(path), dt)
 	}
 
