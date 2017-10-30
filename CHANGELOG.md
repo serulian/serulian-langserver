@@ -1,5 +1,12 @@
 # Change Log
 
+## [v0.0.2](https://github.com/serulian/serulian-langserver/tree/v0.0.2) (2017-10-28)
+[Full Changelog](https://github.com/serulian/serulian-langserver/compare/v0.0.1...v0.0.2)
+
+**Fixed bugs:**
+
+- Add handling for empty workspaces [\#9](https://github.com/serulian/serulian-langserver/pull/9) ([josephschorr](https://github.com/josephschorr))
+
 ## [v0.0.1](https://github.com/serulian/serulian-langserver/tree/v0.0.1) (2017-10-13)
 [Full Changelog](https://github.com/serulian/serulian-langserver/compare/v0.0.1-alpha...v0.0.1)
 
