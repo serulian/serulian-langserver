@@ -1,5 +1,8 @@
 # Change Log
 
+## [v0.2.0](https://github.com/serulian/serulian-langserver/tree/v0.2.0) (2017-11-03)
+[Full Changelog](https://github.com/serulian/serulian-langserver/compare/v0.1.0...v0.2.0)
+
 ## [v0.1.0](https://github.com/serulian/serulian-langserver/tree/v0.1.0) (2017-10-30)
 [Full Changelog](https://github.com/serulian/serulian-langserver/compare/v0.0.2...v0.1.0)
 
