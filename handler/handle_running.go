@@ -367,7 +367,7 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 			return protocol.CompletionResult([]protocol.CompletionItem{}), nil
 		}
 
-		log.Printf("Retrieving completions for file %s and text: %s", uri, lineText)
+		log.Printf("Retrieving completions for file %s and text: `%s`", uri, lineText)
 
 		// Lookup the completion via Grok.
 		source := compilercommon.InputSource(path)

@@ -16,8 +16,13 @@ func debounce(f func(data interface{}), interval time.Duration) func(data interf
 	var addVersion uint32
 
 	checkAndWait := func(checkVersion uint32, data interface{}) {
-		<-time.After(interval)
 		currentVersion := atomic.LoadUint32(&addVersion)
+		if currentVersion != checkVersion {
+			return
+		}
+
+		<-time.After(interval)
+		currentVersion = atomic.LoadUint32(&addVersion)
 		if currentVersion == checkVersion {
 			f(data)
 		}
