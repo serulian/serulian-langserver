@@ -14,6 +14,7 @@ import (
 	"github.com/serulian/serulian-langserver/protocol"
 
 	"github.com/sourcegraph/jsonrpc2"
+	cmap "github.com/streamrail/concurrent-map"
 )
 
 type langServerState string
@@ -36,6 +37,9 @@ type SerulianLangServerHandler struct {
 
 	// documentTracker defines a tracker for managing the state of all open documents (source files).
 	documentTracker *documentTracker
+
+	// cancelationHandles is a map from request ID to its associated cancelation handle.
+	cancelationHandles cmap.ConcurrentMap
 }
 
 // NewHandler creates a Serulian language server handler.
@@ -44,11 +48,27 @@ func NewHandler(entrypointSourceFile string, vcsDevelopmentDirectories []string)
 		currentState:         statePreInitialized,
 		entrypointSourceFile: entrypointSourceFile,
 		documentTracker:      newDocumentTracker(vcsDevelopmentDirectories),
+		cancelationHandles:   cmap.New(),
 	}
 }
 
 // Handle implements the JSON-RPC handling method for all incoming requests and notifications.
 func (h *SerulianLangServerHandler) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
+	// Check for cancelation.
+	if req.Method == protocol.CancelRequestNotification {
+		params := protocol.CancelRequestParams{}
+		err := h.decodeParameters(req, &params)
+		if err != nil {
+			return
+		}
+
+		handle, ok := h.cancelationHandles.Pop(params.ID.String())
+		if ok {
+			handle.(*CancelationHandle).Cancel()
+		}
+		return
+	}
+
 	// If the call must be executed synchronously, do so directly.
 	if h.requiresSynchronousExecution(req.Method) {
 		jsonrpc2.HandlerWithError(h.syncHandle).Handle(ctx, conn, req)
@@ -71,6 +91,10 @@ func (h *SerulianLangServerHandler) requiresSynchronousExecution(method string) 
 func (h *SerulianLangServerHandler) syncHandle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) (result interface{}, err error) {
 	log.Printf("(%v) Got request: %v\n", h.currentState, req)
 
+	cancelationHandle := NewCancelationHandle(req.ID)
+	h.cancelationHandles.Set(req.ID.String(), cancelationHandle)
+	defer h.cancelationHandles.Remove(req.ID.String())
+
 	switch h.currentState {
 	case statePreInitialized:
 		return h.handlePreInit(ctx, conn, req)
@@ -79,7 +103,7 @@ func (h *SerulianLangServerHandler) syncHandle(ctx context.Context, conn *jsonrp
 		return h.handleInitializing(ctx, conn, req)
 
 	case stateRunning:
-		return h.handleRunning(ctx, conn, req)
+		return h.handleRunning(ctx, conn, req, cancelationHandle)
 
 	case stateShuttingDown:
 		return h.handleShuttingDown(ctx, conn, req)

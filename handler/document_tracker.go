@@ -26,6 +26,9 @@ import (
 	cmap "github.com/streamrail/concurrent-map"
 )
 
+// MaximumBuildDuration is the maximum duration to build a handle before we timeout.
+const MaximumBuildDuration = 5 * time.Second
+
 // DiagnoseDelay is the delay waited before a document is re-parsed.
 const DiagnoseDelay = 500 * time.Millisecond
 
@@ -100,6 +103,7 @@ func (dt *documentTracker) initializeWorkspace(ctx context.Context, conn *jsonrp
 			Libraries:                 getPackageLibraries(workspaceRootPath),
 			PathLoader:                dt,
 			ScopePaths:                []compilercommon.InputSource{},
+			MaximumBuildDuration:      MaximumBuildDuration,
 		})
 		dt.debouncedDiagnose(diagnoseParams{dt, workspaceRootPath, -1, true, ctx, conn})
 	}
@@ -148,6 +152,7 @@ func (dt *documentTracker) openDocument(ctx context.Context, conn *jsonrpc2.Conn
 		Libraries:                 getPackageLibraries(path),
 		PathLoader:                dt,
 		ScopePaths:                []compilercommon.InputSource{compilercommon.InputSource(path)},
+		MaximumBuildDuration:      MaximumBuildDuration,
 	})
 
 	dt.documents.Set(path, document{
