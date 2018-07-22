@@ -7,6 +7,7 @@ package handler
 import (
 	"context"
 	"log"
+	"os"
 
 	"github.com/serulian/compiler/compilercommon"
 	"github.com/serulian/compiler/compilerutil"
@@ -20,7 +21,7 @@ import (
 	"github.com/sourcegraph/jsonrpc2"
 )
 
-func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) (result interface{}, err error) {
+func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request, cancelationHandle *CancelationHandle) (result interface{}, err error) {
 	switch req.Method {
 	// Code Actions.
 	case protocol.CodeActionRequest:
@@ -36,12 +37,20 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 			return protocol.CodeActionResult([]protocol.Command{}), nil
 		}
 
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
+		}
+
 		// Grab a Grok handle for the document.
 		uri := params.TextDocument.URI
 		handle, document, err := h.documentTracker.getGrokHandleAndDocument(uri.String(), grok.HandleAllowStale)
 		if err != nil {
 			log.Printf("Got error when trying to get grok handle for %s: %v", uri, err)
 			return protocol.CodeActionResult([]protocol.Command{}), nil
+		}
+
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
 		}
 
 		// Retrieve the path.
@@ -57,6 +66,10 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 		if err != nil {
 			log.Printf("Got error when trying to retrieve actions for path %s: %v", uri, err)
 			return protocol.CodeActionResult([]protocol.Command{}), nil
+		}
+
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
 		}
 
 		// Return the actions, converted to commands.
@@ -97,10 +110,18 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 			return nil, nil
 		}
 
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
+		}
+
 		handle, err := groker.GetHandleWithOption(grok.HandleAllowStale)
 		if err != nil {
 			log.Printf("Got error when trying to get grok handle for %s: %v\n", path, err)
 			return nil, nil
+		}
+
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
 		}
 
 		source := compilercommon.InputSource(path)
@@ -126,12 +147,20 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 			return protocol.CodeLensResult([]protocol.CodeLens{}), nil
 		}
 
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
+		}
+
 		// Grab a Grok handle for the document.
 		uri := params.TextDocument.URI
 		handle, document, err := h.documentTracker.getGrokHandleAndDocument(uri.String(), grok.HandleAllowStale)
 		if err != nil {
 			log.Printf("Got error when trying to get grok handle for %s: %v", uri, err)
 			return protocol.CodeLensResult([]protocol.CodeLens{}), nil
+		}
+
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
 		}
 
 		// Retrieve the path.
@@ -147,6 +176,10 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 		if err != nil {
 			log.Printf("Got error when trying to lookup CCA's for %s: %v", uri, err)
 			return protocol.CodeLensResult([]protocol.CodeLens{}), nil
+		}
+
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
 		}
 
 		// For each CCA found, save it to the document's map under a unique ID and return it to the client.
@@ -184,6 +217,10 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 		ccaID := dataMap["id"].(string)
 		path := dataMap["path"].(string)
 		version := int(dataMap["version"].(float64))
+
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
+		}
 
 		// Find the CodeContextOrAction in the tracker.
 		document, found := h.documentTracker.getDocumentAtVersion(path, version)
@@ -227,12 +264,20 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 			return protocol.SignatureHelpResult{[]protocol.SignatureInformation{}, 0, 0}, nil
 		}
 
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
+		}
+
 		// Grab a Grok handle for the document.
 		uri := params.TextDocument.URI
 		handle, err := h.documentTracker.getGrokHandle(uri.String(), grok.HandleAllowStale)
 		if err != nil {
 			log.Printf("Got error when trying to get grok handle for %s: %v", uri, err)
 			return protocol.SignatureHelpResult{[]protocol.SignatureInformation{}, 0, 0}, nil
+		}
+
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
 		}
 
 		// Retrieve the path.
@@ -249,6 +294,10 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 			return protocol.SignatureHelpResult{[]protocol.SignatureInformation{}, 0, 0}, nil
 		}
 
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
+		}
+
 		log.Printf("Retrieving signature help for file %s and text: %s", uri, lineText)
 
 		// Lookup the signature help via Grok.
@@ -257,6 +306,10 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 		if err != nil {
 			log.Printf("Got error when retrieving signature for %s: %v", uri, err)
 			return protocol.SignatureHelpResult{[]protocol.SignatureInformation{}, 0, 0}, nil
+		}
+
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
 		}
 
 		if signatureInformation.Name == "" && len(signatureInformation.Parameters) == 0 {
@@ -268,11 +321,19 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 				return protocol.SignatureHelpResult{[]protocol.SignatureInformation{}, 0, 0}, nil
 			}
 
+			if cancelationHandle.WasCanceled() {
+				return nil, cancelationHandle.Error()
+			}
+
 			signatureInformation, err = handle.GetSignatureForPosition(strings.TrimSpace(lineText), source, params.Position.Line, params.Position.Column)
 			if err != nil {
 				log.Printf("Got error when signature completions for %s: %v", uri, err)
 				return protocol.SignatureHelpResult{[]protocol.SignatureInformation{}, 0, 0}, nil
 			}
+		}
+
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
 		}
 
 		if signatureInformation.Name == "" && len(signatureInformation.Parameters) == 0 {
@@ -345,12 +406,20 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 			return protocol.CompletionResult([]protocol.CompletionItem{}), nil
 		}
 
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
+		}
+
 		// Grab a Grok handle for the document.
 		uri := params.TextDocument.URI
 		handle, err := h.documentTracker.getGrokHandle(uri.String(), grok.HandleAllowStale)
 		if err != nil {
 			log.Printf("Got error when trying to get grok handle for %s: %v", uri, err)
 			return protocol.CompletionResult([]protocol.CompletionItem{}), nil
+		}
+
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
 		}
 
 		// Retrieve the path.
@@ -377,6 +446,10 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 			return protocol.CompletionResult([]protocol.CompletionItem{}), nil
 		}
 
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
+		}
+
 		if len(completionInfo.Completions) == 0 {
 			// TODO: can we do this in a better way?
 			// Try again on a full handle.
@@ -386,11 +459,19 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 				return protocol.CompletionResult([]protocol.CompletionItem{}), nil
 			}
 
+			if cancelationHandle.WasCanceled() {
+				return nil, cancelationHandle.Error()
+			}
+
 			completionInfo, err = handle.GetCompletionsForPosition(strings.TrimSpace(lineText), source, params.Position.Line, params.Position.Column)
 			if err != nil {
 				log.Printf("Got error when retrieving completions for %s: %v", uri, err)
 				return protocol.CompletionResult([]protocol.CompletionItem{}), nil
 			}
+		}
+
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
 		}
 
 		if len(completionInfo.Completions) == 0 {
@@ -515,6 +596,10 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 			return protocol.WorkspaceSymbolResponse([]protocol.SymbolInformation{}), nil
 		}
 
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
+		}
+
 		// Grab a Grok handle.
 		handle, err := groker.GetHandleWithOption(grok.HandleAllowStale)
 		if err != nil {
@@ -522,11 +607,19 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 			return protocol.WorkspaceSymbolResponse([]protocol.SymbolInformation{}), nil
 		}
 
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
+		}
+
 		// Perform symbol lookup.
 		symbols, err := handle.FindSymbols(params.Query)
 		if err != nil {
 			log.Printf("Got error when trying to find symbol %s in global workspace: %v", params.Query, err)
 			return protocol.WorkspaceSymbolResponse([]protocol.SymbolInformation{}), nil
+		}
+
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
 		}
 
 		// Convert the symbols and return.
@@ -547,10 +640,14 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 		}
 
 		log.Printf("Got definition request for document %s at position %v:%v\n", params.TextDocument.URI, params.Position.Line, params.Position.Column)
-		rangeInfo, _, status := h.lookupRange(params.TextDocument.URI, params.Position)
+		rangeInfo, _, status := h.lookupRange(params.TextDocument.URI, params.Position, cancelationHandle)
 		if !status {
 			log.Printf("No valid range found for document %s at position %v:%v\n", params.TextDocument.URI, params.Position.Line, params.Position.Column)
 			return protocol.DefinitionResult([]protocol.Location{}), nil
+		}
+
+		if cancelationHandle.WasCanceled() {
+			return nil, cancelationHandle.Error()
 		}
 
 		locations := h.documentTracker.convertRanges(rangeInfo.SourceRanges)
@@ -565,7 +662,7 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 		}
 
 		log.Printf("Got hover request for document %s at position %v:%v\n", params.TextDocument.URI, params.Position.Line, params.Position.Column)
-		rangeInfo, _, status := h.lookupRange(params.TextDocument.URI, params.Position)
+		rangeInfo, _, status := h.lookupRange(params.TextDocument.URI, params.Position, cancelationHandle)
 		if !status {
 			return protocol.HoverResult{
 				Contents: []interface{}{},
@@ -625,17 +722,25 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 			h.documentTracker.closeDocument(params.TextDocument.URI.String())
 		}
 		return nil, nil
+
+	// Exit notification.
+	case protocol.ExitNotification:
+		os.Exit(-1) // -1 since we haven't received the shutdown notification.
 	}
 
 	return nil, nil
 }
 
 // lookupRange performs lookup of the range matching the given position in the given document.
-func (h *SerulianLangServerHandler) lookupRange(uri protocol.DocumentURI, position protocol.Position) (grok.RangeInformation, error, bool) {
+func (h *SerulianLangServerHandler) lookupRange(uri protocol.DocumentURI, position protocol.Position, cancelationHandle *CancelationHandle) (grok.RangeInformation, error, bool) {
 	// Make sure we are tracking this document.
 	if !h.documentTracker.isTracking(uri.String()) {
 		log.Printf("Not tracking document %s\n", uri)
 		return grok.RangeInformation{}, nil, false
+	}
+
+	if cancelationHandle.WasCanceled() {
+		return grok.RangeInformation{}, cancelationHandle.Error(), false
 	}
 
 	// Grab a Grok handle for the document.
@@ -643,6 +748,10 @@ func (h *SerulianLangServerHandler) lookupRange(uri protocol.DocumentURI, positi
 	if err != nil {
 		log.Printf("Got error when trying to get grok handle for %s: %v", uri, err)
 		return grok.RangeInformation{}, err, false
+	}
+
+	if cancelationHandle.WasCanceled() {
+		return grok.RangeInformation{}, cancelationHandle.Error(), false
 	}
 
 	// Retrieve the path.
