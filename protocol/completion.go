@@ -32,30 +32,37 @@ type CompletionItem struct {
 	// about this item, like type or symbol information.
 	Detail string `json:"detail"`
 
-	// Documentation is a human-readable string that represents a doc comment.
-	Documentation string `json:"documentation"`
+	// Documentation is a human-readable string that represents a doc comment. Can be a string or MarkupContent.
+	Documentation interface{} `json:"documentation"`
 }
 
 // CompletionKind represents the various kinds of completions.
 type CompletionKind int
 
 const (
-	CompletionText        CompletionKind = 1
-	CompletionMethod                     = 2
-	CompletionFunction                   = 3
-	CompletionConstructor                = 4
-	CompletionField                      = 5
-	CompletionVariable                   = 6
-	CompletionClass                      = 7
-	CompletionInterface                  = 8
-	CompletionModule                     = 9
-	CompletionProperty                   = 10
-	CompletionUnit                       = 11
-	CompletionValue                      = 12
-	CompletionEnum                       = 13
-	CompletionKeyword                    = 14
-	CompletionSnippet                    = 15
-	CompletionColor                      = 16
-	CompletionFile                       = 17
-	CompletionReference                  = 18
+	CompletionText          CompletionKind = 1
+	CompletionMethod                       = 2
+	CompletionFunction                     = 3
+	CompletionConstructor                  = 4
+	CompletionField                        = 5
+	CompletionVariable                     = 6
+	CompletionClass                        = 7
+	CompletionInterface                    = 8
+	CompletionModule                       = 9
+	CompletionProperty                     = 10
+	CompletionUnit                         = 11
+	CompletionValue                        = 12
+	CompletionEnum                         = 13
+	CompletionKeyword                      = 14
+	CompletionSnippet                      = 15
+	CompletionColor                        = 16
+	CompletionFile                         = 17
+	CompletionReference                    = 18
+	CompletionFolder                       = 19
+	CompletionEnumMember                   = 20
+	CompletionConstant                     = 21
+	CompletionStruct                       = 22
+	CompletionEvent                        = 23
+	CompletionOperator                     = 24
+	CompletionTypeParameter                = 25
 )

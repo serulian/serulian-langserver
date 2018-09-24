@@ -82,8 +82,18 @@ func main() {
 func run() error {
 	var connOptions []jsonrpc2.ConnOpt
 	if debug {
+		ex, err := os.Executable()
+		if err != nil {
+			panic(err)
+		}
+
 		log.SetOutput(os.Stderr)
-		log.Println("Debug mode enabled")
+		log.Println("----> Debug mode enabled <----")
+		log.Printf("Serulian lauguage server binary: %s\n", ex)
+		log.Printf("Toolkit Version: %s\n\n", toolkitversion.DescriptiveVersion())
+		log.Printf("Language Server SHA: %s\n", version.GitSHA)
+		log.Printf("Toolkit SHA: %s\n", toolkitversion.GitSHA)
+
 		connOptions = append(connOptions, jsonrpc2.LogMessages(log.New(os.Stderr, "", 0)))
 	}
 
