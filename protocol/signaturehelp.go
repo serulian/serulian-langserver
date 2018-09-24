@@ -31,8 +31,8 @@ type SignatureInformation struct {
 	// type of the function/operator.
 	Label string `json:"label"`
 
-	// Documentation is the documentation to display, if any.
-	Documentation string `json:"documentation"`
+	// Documentation is the documentation to display, if any. Can be a string or MarkupContent.
+	Documentation interface{} `json:"documentation"`
 
 	// Parameters are the parameters for this signature.
 	Parameters []ParameterInformation `json:"parameters"`
@@ -44,6 +44,6 @@ type ParameterInformation struct {
 	// type of the function/operator.
 	Label string `json:"label"`
 
-	// Documentation is the documentation to display, if any.
-	Documentation string `json:"documentation"`
+	// Documentation is the documentation to display, if any.  Can be a string or MarkupContent.
+	Documentation interface{} `json:"documentation"`
 }

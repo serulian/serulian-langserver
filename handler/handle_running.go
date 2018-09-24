@@ -370,7 +370,7 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 
 			parameters[index] = protocol.ParameterInformation{
 				Label:         label,
-				Documentation: parameterInfo.Documentation,
+				Documentation: markdownContent(parameterInfo.Documentation),
 			}
 		}
 
@@ -384,7 +384,7 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 			Signatures: []protocol.SignatureInformation{
 				protocol.SignatureInformation{
 					Label:         fullSignature,
-					Documentation: signatureInformation.Documentation,
+					Documentation: markdownContent(signatureInformation.Documentation),
 					Parameters:    parameters,
 				},
 			},
@@ -489,7 +489,16 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 				completionKind = protocol.CompletionSnippet
 
 			case grok.TypeCompletion:
-				completionKind = protocol.CompletionClass
+				switch completionInfo.Type.TypeKind() {
+				case typegraph.GenericType:
+					completionKind = protocol.CompletionTypeParameter
+
+				case typegraph.StructType:
+					completionKind = protocol.CompletionStruct
+
+				default:
+					completionKind = protocol.CompletionClass
+				}
 
 			case grok.MemberCompletion:
 				if completionInfo.Member != nil {
@@ -497,6 +506,9 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 					_, hasReturnType := completionInfo.Member.ReturnType()
 
 					switch {
+					case completionInfo.Member.IsOperator():
+						completionKind = protocol.CompletionOperator
+
 					case isConstructor:
 						completionKind = protocol.CompletionConstructor
 
@@ -538,7 +550,7 @@ func (h *SerulianLangServerHandler) handleRunning(ctx context.Context, conn *jso
 				InsertText:    completionInfo.Code,
 				Kind:          completionKind,
 				Detail:        details,
-				Documentation: completionInfo.Documentation,
+				Documentation: markdownContent(completionInfo.Documentation),
 			})
 		}
 
@@ -787,7 +799,7 @@ func (h *SerulianLangServerHandler) symbolInfoFromSymbol(symbol grok.Symbol) (pr
 	case grok.TypeSymbol:
 		switch symbol.Type.TypeKind() {
 		case typegraph.StructType:
-			fallthrough
+			symbolKind = protocol.SymbolStruct
 
 		case typegraph.AgentType:
 			fallthrough
@@ -796,7 +808,7 @@ func (h *SerulianLangServerHandler) symbolInfoFromSymbol(symbol grok.Symbol) (pr
 			symbolKind = protocol.SymbolClass
 
 		case typegraph.NominalType:
-			fallthrough
+			symbolKind = protocol.SymbolObject
 
 		case typegraph.ImplicitInterfaceType:
 			fallthrough
@@ -808,7 +820,7 @@ func (h *SerulianLangServerHandler) symbolInfoFromSymbol(symbol grok.Symbol) (pr
 			fallthrough
 
 		case typegraph.GenericType:
-			symbolKind = protocol.SymbolConstant
+			symbolKind = protocol.SymbolTypeParameter
 
 		default:
 			panic("Unknown kind of type")
@@ -824,6 +836,9 @@ func (h *SerulianLangServerHandler) symbolInfoFromSymbol(symbol grok.Symbol) (pr
 		}
 
 		switch {
+		case symbol.Member.IsOperator():
+			symbolKind = protocol.SymbolOperator
+
 		case isConstructor:
 			symbolKind = protocol.SymbolConstructor
 
@@ -855,4 +870,12 @@ func (h *SerulianLangServerHandler) symbolInfoFromSymbol(symbol grok.Symbol) (pr
 		ContainerName: containerName,
 		Location:      ranges[0],
 	}, true
+}
+
+// markdownContent returns the value wrapped into a MarkupContent indicating it is markdown.
+func markdownContent(value string) protocol.MarkupContent {
+	return protocol.MarkupContent{
+		Kind:  protocol.MarkupKindMarkdown,
+		Value: value,
+	}
 }

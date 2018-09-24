@@ -47,3 +47,31 @@ type MarkedString struct {
 	// Value is the markdown value.
 	Value string `json:"value"`
 }
+
+// MarkupKind defines the various supported kinds of markup.
+type MarkupKind string
+
+const (
+	// MarkupKindPlainText indicates that the MarkupContent is plain text.
+	MarkupKindPlainText MarkupKind = "plaintext"
+
+	// MarkupKindMarkdown indicates that the MarkupContent is markdown.
+	MarkupKindMarkdown
+)
+
+// MarkupContent literal represents a string value which content is interpreted base on its
+// kind flag. Currently the protocol supports `plaintext` and `markdown` as markup kinds.
+//
+// If the kind is `markdown` then the value can contain fenced code blocks like in GitHub issues.
+// See https://help.github.com/articles/creating-and-highlighting-code-blocks/#syntax-highlighting
+//
+// Please Note* that clients might sanitize the return markdown. A client could decide to
+// remove HTML from the markdown to avoid script execution.
+//
+type MarkupContent struct {
+	// Kind is the type of the Markup.
+	Kind MarkupKind `json:"kind"`
+
+	// Value is the value of the Markup.
+	Value string `json:"value"`
+}
