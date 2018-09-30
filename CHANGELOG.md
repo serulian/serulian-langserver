@@ -1,5 +1,13 @@
 # Change Log
 
+## [v0.3.2](https://github.com/serulian/serulian-langserver/tree/v0.3.2) (2018-09-30)
+[Full Changelog](https://github.com/serulian/serulian-langserver/compare/v0.3.1...v0.3.2)
+
+**Implemented enhancements:**
+
+- Updates to lang server for recent additions to the language server protocol [\#12](https://github.com/serulian/serulian-langserver/pull/12) ([josephschorr](https://github.com/josephschorr))
+- Add cancelation support to the language server [\#11](https://github.com/serulian/serulian-langserver/pull/11) ([josephschorr](https://github.com/josephschorr))
+
 ## [v0.3.1](https://github.com/serulian/serulian-langserver/tree/v0.3.1) (2018-06-16)
 [Full Changelog](https://github.com/serulian/serulian-langserver/compare/v0.3.0...v0.3.1)
 
